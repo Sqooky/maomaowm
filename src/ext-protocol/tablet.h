@@ -157,6 +157,9 @@ void tablettoolmotion(struct wlr_tablet_v2_tablet_tool *tool, bool change_x,
 
 	if (surface)
 		wlr_tablet_v2_tablet_tool_notify_motion(tablet_tool, sx, sy);
+
+	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
+	handlecursoractivity();
 }
 
 void tablettoolproximity(struct wl_listener *listener, void *data) {
