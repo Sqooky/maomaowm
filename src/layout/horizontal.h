@@ -1,9 +1,9 @@
 // 网格布局窗口大小和位置计算
 void grid(Monitor *m) {
-	unsigned int i, n;
-	unsigned int cx, cy, cw, ch;
-	unsigned int dx;
-	unsigned int cols, rows, overcols;
+	uint32_t i, n;
+	uint32_t cx, cy, cw, ch;
+	uint32_t dx;
+	uint32_t cols, rows, overcols;
 	Client *c = NULL;
 	n = 0;
 	int target_gappo = enablegaps ? m->isoverview ? overviewgappo : gappoh : 0;
@@ -23,13 +23,8 @@ void grid(Monitor *m) {
 			if (c->mon != m)
 				continue;
 
-			c->bw = m->visible_tiling_clients == 1 && no_border_when_single &&
-							smartgaps
-						? 0
-						: borderpx;
 			if (VISIBLEON(c, m) && !c->isunglobal &&
-				((m->isoverview && !client_should_ignore_focus(c)) ||
-				 ISTILED(c))) {
+				((m->isoverview && !client_is_x11_popup(c)) || ISTILED(c))) {
 				cw = (m->w.width - 2 * target_gappo) * single_width_ratio;
 				ch = (m->w.height - 2 * target_gappo) * single_height_ratio;
 				c->geom.x = m->w.x + (m->w.width - cw) / 2;
@@ -50,13 +45,8 @@ void grid(Monitor *m) {
 			if (c->mon != m)
 				continue;
 
-			c->bw = m->visible_tiling_clients == 1 && no_border_when_single &&
-							smartgaps
-						? 0
-						: borderpx;
 			if (VISIBLEON(c, m) && !c->isunglobal &&
-				((m->isoverview && !client_should_ignore_focus(c)) ||
-				 ISTILED(c))) {
+				((m->isoverview && !client_is_x11_popup(c)) || ISTILED(c))) {
 				if (i == 0) {
 					c->geom.x = m->w.x + target_gappo;
 					c->geom.y = m->w.y + (m->w.height - ch) / 2 + target_gappo;
@@ -101,12 +91,9 @@ void grid(Monitor *m) {
 
 		if (c->mon != m)
 			continue;
-		c->bw =
-			m->visible_tiling_clients == 1 && no_border_when_single && smartgaps
-				? 0
-				: borderpx;
+
 		if (VISIBLEON(c, m) && !c->isunglobal &&
-			((m->isoverview && !client_should_ignore_focus(c)) || ISTILED(c))) {
+			((m->isoverview && !client_is_x11_popup(c)) || ISTILED(c))) {
 			cx = m->w.x + (i % cols) * (cw + target_gappi);
 			cy = m->w.y + (i / cols) * (ch + target_gappi);
 			if (overcols && i >= n - overcols) {
@@ -123,15 +110,15 @@ void grid(Monitor *m) {
 }
 
 void deck(Monitor *m) {
-	unsigned int mw, my;
+	uint32_t mw, my;
 	int i, n = 0;
 	Client *c = NULL;
 	Client *fc = NULL;
 	float mfact;
 
-	unsigned int cur_gappih = enablegaps ? m->gappih : 0;
-	unsigned int cur_gappoh = enablegaps ? m->gappoh : 0;
-	unsigned int cur_gappov = enablegaps ? m->gappov : 0;
+	uint32_t cur_gappih = enablegaps ? m->gappih : 0;
+	uint32_t cur_gappoh = enablegaps ? m->gappoh : 0;
+	uint32_t cur_gappov = enablegaps ? m->gappov : 0;
 
 	cur_gappih = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappih;
 	cur_gappoh = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappoh;
@@ -191,27 +178,62 @@ void deck(Monitor *m) {
 	}
 }
 
+void horizontal_scroll_adjust_fullandmax(Client *c,
+										 struct wlr_box *target_geom) {
+	Monitor *m = c->mon;
+	uint32_t cur_gappih = enablegaps ? m->gappih : 0;
+	uint32_t cur_gappoh = enablegaps ? m->gappoh : 0;
+	uint32_t cur_gappov = enablegaps ? m->gappov : 0;
+
+	cur_gappih =
+		smartgaps && m->visible_scroll_tiling_clients == 1 ? 0 : cur_gappih;
+	cur_gappoh =
+		smartgaps && m->visible_scroll_tiling_clients == 1 ? 0 : cur_gappoh;
+	cur_gappov =
+		smartgaps && m->visible_scroll_tiling_clients == 1 ? 0 : cur_gappov;
+
+	if (c->isfullscreen) {
+		target_geom->height = m->m.height;
+		target_geom->width = m->m.width;
+		target_geom->y = m->m.y;
+		return;
+	}
+
+	if (c->ismaximizescreen) {
+		target_geom->height = m->w.height - 2 * cur_gappov;
+		target_geom->width = m->w.width - 2 * cur_gappoh;
+		target_geom->y = m->w.y + cur_gappov;
+		return;
+	}
+
+	target_geom->height = m->w.height - 2 * cur_gappov;
+	target_geom->y = m->w.y + (m->w.height - target_geom->height) / 2;
+}
+
 // 滚动布局
 void scroller(Monitor *m) {
-	unsigned int i, n, j;
+	uint32_t i, n, j;
+	float single_proportion = 1.0;
 
 	Client *c = NULL, *root_client = NULL;
 	Client **tempClients = NULL; // 初始化为 NULL
 	struct wlr_box target_geom;
 	int focus_client_index = 0;
 	bool need_scroller = false;
-	unsigned int cur_gappih = enablegaps ? m->gappih : 0;
-	unsigned int cur_gappoh = enablegaps ? m->gappoh : 0;
-	unsigned int cur_gappov = enablegaps ? m->gappov : 0;
+	uint32_t cur_gappih = enablegaps ? m->gappih : 0;
+	uint32_t cur_gappoh = enablegaps ? m->gappoh : 0;
+	uint32_t cur_gappov = enablegaps ? m->gappov : 0;
 
-	cur_gappih = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappih;
-	cur_gappoh = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappoh;
-	cur_gappov = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappov;
+	cur_gappih =
+		smartgaps && m->visible_scroll_tiling_clients == 1 ? 0 : cur_gappih;
+	cur_gappoh =
+		smartgaps && m->visible_scroll_tiling_clients == 1 ? 0 : cur_gappoh;
+	cur_gappov =
+		smartgaps && m->visible_scroll_tiling_clients == 1 ? 0 : cur_gappov;
 
-	unsigned int max_client_width =
-		m->w.width - 2 * scroller_structs - cur_gappih;
+	uint32_t max_client_width = m->w.width - 2 * scroller_structs - cur_gappih;
 
-	n = m->visible_tiling_clients;
+	n = m->visible_scroll_tiling_clients;
 
 	if (n == 0) {
 		return; // 没有需要处理的客户端，直接返回
@@ -227,17 +249,22 @@ void scroller(Monitor *m) {
 	// 第二次遍历，填充 tempClients
 	j = 0;
 	wl_list_for_each(c, &clients, link) {
-		if (VISIBLEON(c, m) && ISTILED(c)) {
+		if (VISIBLEON(c, m) && ISSCROLLTILED(c)) {
 			tempClients[j] = c;
 			j++;
 		}
 	}
 
-	if (n == 1) {
+	if (n == 1 && !scroller_ignore_proportion_single &&
+		!tempClients[0]->isfullscreen && !tempClients[0]->ismaximizescreen) {
 		c = tempClients[0];
+
+		single_proportion = c->scroller_proportion_single > 0.0f
+								? c->scroller_proportion_single
+								: scroller_default_proportion_single;
+
 		target_geom.height = m->w.height - 2 * cur_gappov;
-		target_geom.width =
-			(m->w.width - 2 * cur_gappoh) * scroller_default_proportion_single;
+		target_geom.width = (m->w.width - 2 * cur_gappoh) * single_proportion;
 		target_geom.x = m->w.x + (m->w.width - target_geom.width) / 2;
 		target_geom.y = m->w.y + (m->w.height - target_geom.height) / 2;
 		resize(c, target_geom, 0);
@@ -245,11 +272,10 @@ void scroller(Monitor *m) {
 		return;
 	}
 
-	if (m->sel && !client_is_unmanaged(m->sel) && !m->sel->isfloating &&
-		!m->sel->ismaxmizescreen && !m->sel->isfullscreen) {
+	if (m->sel && !client_is_unmanaged(m->sel) && ISSCROLLTILED(m->sel)) {
 		root_client = m->sel;
-	} else if (m->prevsel && ISTILED(m->prevsel) && VISIBLEON(m->prevsel, m) &&
-			   !client_is_unmanaged(m->prevsel)) {
+	} else if (m->prevsel && ISSCROLLTILED(m->prevsel) &&
+			   VISIBLEON(m->prevsel, m) && !client_is_unmanaged(m->prevsel)) {
 		root_client = m->prevsel;
 	} else {
 		root_client = center_tiled_select(m);
@@ -263,8 +289,7 @@ void scroller(Monitor *m) {
 	for (i = 0; i < n; i++) {
 		c = tempClients[i];
 		if (root_client == c) {
-			if (!c->is_pending_open_animation &&
-				c->geom.x >= m->w.x + scroller_structs &&
+			if (c->geom.x >= m->w.x + scroller_structs &&
 				c->geom.x + c->geom.width <=
 					m->w.x + m->w.width - scroller_structs) {
 				need_scroller = false;
@@ -276,17 +301,28 @@ void scroller(Monitor *m) {
 		}
 	}
 
+	if (n == 1 && scroller_ignore_proportion_single) {
+		need_scroller = true;
+	}
+
 	if (start_drag_window)
 		need_scroller = false;
 
 	target_geom.height = m->w.height - 2 * cur_gappov;
 	target_geom.width = max_client_width * c->scroller_proportion;
 	target_geom.y = m->w.y + (m->w.height - target_geom.height) / 2;
-
-	if (need_scroller) {
+	horizontal_scroll_adjust_fullandmax(tempClients[focus_client_index],
+										&target_geom);
+	if (tempClients[focus_client_index]->isfullscreen) {
+		target_geom.x = m->m.x;
+		resize(tempClients[focus_client_index], target_geom, 0);
+	} else if (tempClients[focus_client_index]->ismaximizescreen) {
+		target_geom.x = m->w.x + cur_gappoh;
+		resize(tempClients[focus_client_index], target_geom, 0);
+	} else if (need_scroller) {
 		if (scroller_focus_center ||
 			((!m->prevsel ||
-			  (ISTILED(m->prevsel) &&
+			  (ISSCROLLTILED(m->prevsel) &&
 			   (m->prevsel->scroller_proportion * max_client_width) +
 					   (root_client->scroller_proportion * max_client_width) >
 				   m->w.width - 2 * scroller_structs - cur_gappih)) &&
@@ -309,14 +345,17 @@ void scroller(Monitor *m) {
 	for (i = 1; i <= focus_client_index; i++) {
 		c = tempClients[focus_client_index - i];
 		target_geom.width = max_client_width * c->scroller_proportion;
+		horizontal_scroll_adjust_fullandmax(c, &target_geom);
 		target_geom.x = tempClients[focus_client_index - i + 1]->geom.x -
 						cur_gappih - target_geom.width;
+
 		resize(c, target_geom, 0);
 	}
 
 	for (i = 1; i < n - focus_client_index; i++) {
 		c = tempClients[focus_client_index + i];
 		target_geom.width = max_client_width * c->scroller_proportion;
+		horizontal_scroll_adjust_fullandmax(c, &target_geom);
 		target_geom.x = tempClients[focus_client_index + i - 1]->geom.x +
 						cur_gappih +
 						tempClients[focus_client_index + i - 1]->geom.width;
@@ -327,7 +366,7 @@ void scroller(Monitor *m) {
 }
 
 void center_tile(Monitor *m) {
-	unsigned int i, n = 0, h, r, ie = enablegaps, mw, mx, my, oty, ety, tw;
+	uint32_t i, n = 0, h, r, ie = enablegaps, mw, mx, my, oty, ety, tw;
 	Client *c = NULL;
 	Client *fc = NULL;
 	double mfact = 0;
@@ -336,6 +375,8 @@ void center_tile(Monitor *m) {
 
 	n = m->visible_tiling_clients;
 	master_num = m->pertag->nmasters[m->pertag->curtag];
+	master_num = n > master_num ? master_num : n;
+
 	stack_num = n - master_num;
 
 	if (n == 0)
@@ -348,10 +389,10 @@ void center_tile(Monitor *m) {
 	}
 
 	// 间隙参数处理
-	unsigned int cur_gappiv = enablegaps ? m->gappiv : 0; // 内部垂直间隙
-	unsigned int cur_gappih = enablegaps ? m->gappih : 0; // 内部水平间隙
-	unsigned int cur_gappov = enablegaps ? m->gappov : 0; // 外部垂直间隙
-	unsigned int cur_gappoh = enablegaps ? m->gappoh : 0; // 外部水平间隙
+	uint32_t cur_gappiv = enablegaps ? m->gappiv : 0; // 内部垂直间隙
+	uint32_t cur_gappih = enablegaps ? m->gappih : 0; // 内部水平间隙
+	uint32_t cur_gappov = enablegaps ? m->gappov : 0; // 外部垂直间隙
+	uint32_t cur_gappoh = enablegaps ? m->gappoh : 0; // 外部水平间隙
 
 	// 智能间隙处理
 	cur_gappiv = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappiv;
@@ -359,7 +400,7 @@ void center_tile(Monitor *m) {
 	cur_gappov = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappov;
 	cur_gappoh = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappoh;
 
-	unsigned int nmasters = m->pertag->nmasters[m->pertag->curtag];
+	uint32_t nmasters = m->pertag->nmasters[m->pertag->curtag];
 	mfact = fc->master_mfact_per > 0.0f ? fc->master_mfact_per
 										: m->pertag->mfacts[m->pertag->curtag];
 
@@ -371,6 +412,19 @@ void center_tile(Monitor *m) {
 
 	// 判断是否需要主区域铺满
 	int should_overspread = center_master_overspread && (n <= nmasters);
+
+	uint32_t master_surplus_height =
+		(m->w.height - 2 * cur_gappov - cur_gappiv * ie * (master_num - 1));
+	float master_surplus_ratio = 1.0;
+
+	uint32_t slave_left_surplus_height =
+		(m->w.height - 2 * cur_gappov - cur_gappiv * ie * (stack_num / 2 - 1));
+	float slave_left_surplus_ratio = 1.0;
+
+	uint32_t slave_right_surplus_height =
+		(m->w.height - 2 * cur_gappov -
+		 cur_gappiv * ie * ((stack_num + 1) / 2 - 1));
+	float slave_right_surplus_ratio = 1.0;
 
 	if (n > nmasters || !should_overspread) {
 		// 计算主区域宽度（居中模式）
@@ -416,9 +470,11 @@ void center_tile(Monitor *m) {
 			// 主区域窗口
 			r = MIN(n, nmasters) - i;
 			if (c->master_inner_per > 0.0f) {
-				h = (m->w.height - 2 * cur_gappov -
-					 cur_gappiv * ie * (master_num - 1)) *
-					c->master_inner_per;
+				h = master_surplus_height * c->master_inner_per /
+					master_surplus_ratio;
+				master_surplus_height = master_surplus_height - h;
+				master_surplus_ratio =
+					master_surplus_ratio - c->master_inner_per;
 				c->master_mfact_per = mfact;
 			} else {
 				h = (m->w.height - my - cur_gappov -
@@ -438,22 +494,22 @@ void center_tile(Monitor *m) {
 			my += c->geom.height + cur_gappiv * ie;
 		} else {
 			// 堆叠区域窗口
-			unsigned int stack_index = i - nmasters;
+			uint32_t stack_index = i - nmasters;
 
 			if (n - nmasters == 1) {
 				// 单个堆叠窗口
 				r = n - i;
-				if (c->stack_innder_per > 0.0f) {
+				if (c->stack_inner_per > 0.0f) {
 					h = (m->w.height - 2 * cur_gappov -
 						 cur_gappiv * ie * (stack_num - 1)) *
-						c->stack_innder_per;
+						c->stack_inner_per;
 					c->master_mfact_per = mfact;
 				} else {
 					h = (m->w.height - ety - cur_gappov -
 						 cur_gappiv * ie * (r - 1)) /
 						r;
-					c->stack_innder_per = h / (m->w.height - ety - cur_gappov -
-											   cur_gappiv * ie * (r - 1));
+					c->stack_inner_per = h / (m->w.height - ety - cur_gappov -
+											  cur_gappiv * ie * (r - 1));
 					c->master_mfact_per = mfact;
 				}
 
@@ -479,16 +535,19 @@ void center_tile(Monitor *m) {
 
 				if ((stack_index % 2) ^ (n % 2 == 0)) {
 					// 右侧堆叠窗口
-					if (c->stack_innder_per > 0.0f) {
-						h = (m->w.height - 2 * cur_gappov -
-							 cur_gappiv * ie * ((stack_num + 1) / 2 - 1)) *
-							c->stack_innder_per;
+					if (c->stack_inner_per > 0.0f) {
+						h = slave_right_surplus_height * c->stack_inner_per /
+							slave_right_surplus_ratio;
+						slave_right_surplus_height =
+							slave_right_surplus_height - h;
+						slave_right_surplus_ratio =
+							slave_right_surplus_ratio - c->stack_inner_per;
 						c->master_mfact_per = mfact;
 					} else {
 						h = (m->w.height - ety - cur_gappov -
 							 cur_gappiv * ie * (r - 1)) /
 							r;
-						c->stack_innder_per =
+						c->stack_inner_per =
 							h / (m->w.height - ety - cur_gappov -
 								 cur_gappiv * ie * (r - 1));
 						c->master_mfact_per = mfact;
@@ -505,16 +564,19 @@ void center_tile(Monitor *m) {
 					ety += c->geom.height + cur_gappiv * ie;
 				} else {
 					// 左侧堆叠窗口
-					if (c->stack_innder_per > 0.0f) {
-						h = (m->w.height - 2 * cur_gappov -
-							 cur_gappiv * ie * (stack_num / 2 - 1)) *
-							c->stack_innder_per;
+					if (c->stack_inner_per > 0.0f) {
+						h = slave_left_surplus_height * c->stack_inner_per /
+							slave_left_surplus_ratio;
+						slave_left_surplus_height =
+							slave_left_surplus_height - h;
+						slave_left_surplus_ratio =
+							slave_left_surplus_ratio - c->stack_inner_per;
 						c->master_mfact_per = mfact;
 					} else {
 						h = (m->w.height - oty - cur_gappov -
 							 cur_gappiv * ie * (r - 1)) /
 							r;
-						c->stack_innder_per =
+						c->stack_inner_per =
 							h / (m->w.height - oty - cur_gappov -
 								 cur_gappiv * ie * (r - 1));
 						c->master_mfact_per = mfact;
@@ -536,7 +598,7 @@ void center_tile(Monitor *m) {
 }
 
 void tile(Monitor *m) {
-	unsigned int i, n = 0, h, r, ie = enablegaps, mw, my, ty;
+	uint32_t i, n = 0, h, r, ie = enablegaps, mw, my, ty;
 	Client *c = NULL;
 	Client *fc = NULL;
 	double mfact = 0;
@@ -545,15 +607,16 @@ void tile(Monitor *m) {
 
 	n = m->visible_tiling_clients;
 	master_num = m->pertag->nmasters[m->pertag->curtag];
+	master_num = n > master_num ? master_num : n;
 	stack_num = n - master_num;
 
 	if (n == 0)
 		return;
 
-	unsigned int cur_gappiv = enablegaps ? m->gappiv : 0;
-	unsigned int cur_gappih = enablegaps ? m->gappih : 0;
-	unsigned int cur_gappov = enablegaps ? m->gappov : 0;
-	unsigned int cur_gappoh = enablegaps ? m->gappoh : 0;
+	uint32_t cur_gappiv = enablegaps ? m->gappiv : 0;
+	uint32_t cur_gappih = enablegaps ? m->gappih : 0;
+	uint32_t cur_gappov = enablegaps ? m->gappov : 0;
+	uint32_t cur_gappoh = enablegaps ? m->gappoh : 0;
 
 	cur_gappiv = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappiv;
 	cur_gappih = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappih;
@@ -577,15 +640,26 @@ void tile(Monitor *m) {
 		mw = m->w.width - 2 * cur_gappoh + cur_gappih * ie;
 	i = 0;
 	my = ty = cur_gappov;
+
+	uint32_t master_surplus_height =
+		(m->w.height - 2 * cur_gappov - cur_gappiv * ie * (master_num - 1));
+	float master_surplus_ratio = 1.0;
+
+	uint32_t slave_surplus_height =
+		(m->w.height - 2 * cur_gappov - cur_gappiv * ie * (stack_num - 1));
+	float slave_surplus_ratio = 1.0;
+
 	wl_list_for_each(c, &clients, link) {
 		if (!VISIBLEON(c, m) || !ISTILED(c))
 			continue;
 		if (i < m->pertag->nmasters[m->pertag->curtag]) {
 			r = MIN(n, m->pertag->nmasters[m->pertag->curtag]) - i;
 			if (c->master_inner_per > 0.0f) {
-				h = (m->w.height - 2 * cur_gappov -
-					 cur_gappiv * ie * (master_num - 1)) *
-					c->master_inner_per;
+				h = master_surplus_height * c->master_inner_per /
+					master_surplus_ratio;
+				master_surplus_height = master_surplus_height - h;
+				master_surplus_ratio =
+					master_surplus_ratio - c->master_inner_per;
 				c->master_mfact_per = mfact;
 			} else {
 				h = (m->w.height - my - cur_gappov -
@@ -604,21 +678,22 @@ void tile(Monitor *m) {
 			my += c->geom.height + cur_gappiv * ie;
 		} else {
 			r = n - i;
-			if (c->stack_innder_per > 0.0f) {
-				h = (m->w.height - 2 * cur_gappov -
-					 cur_gappiv * ie * (stack_num - 1)) *
-					c->stack_innder_per;
+			if (c->stack_inner_per > 0.0f) {
+				h = slave_surplus_height * c->stack_inner_per /
+					slave_surplus_ratio;
+				slave_surplus_height = slave_surplus_height - h;
+				slave_surplus_ratio = slave_surplus_ratio - c->stack_inner_per;
 				c->master_mfact_per = mfact;
 			} else {
 				h = (m->w.height - ty - cur_gappov -
 					 cur_gappiv * ie * (r - 1)) /
 					r;
-				c->stack_innder_per = h / (m->w.height - ty - cur_gappov -
-										   cur_gappiv * ie * (r - 1));
+				c->stack_inner_per = h / (m->w.height - ty - cur_gappov -
+										  cur_gappiv * ie * (r - 1));
 				c->master_mfact_per = mfact;
 			}
 
-			// wlr_log(WLR_ERROR, "stack_innder_per: %f", c->stack_innder_per);
+			// wlr_log(WLR_ERROR, "stack_inner_per: %f", c->stack_inner_per);
 
 			resize(c,
 				   (struct wlr_box){.x = m->w.x + mw + cur_gappoh,
@@ -633,7 +708,7 @@ void tile(Monitor *m) {
 }
 
 void right_tile(Monitor *m) {
-	unsigned int i, n = 0, h, r, ie = enablegaps, mw, my, ty;
+	uint32_t i, n = 0, h, r, ie = enablegaps, mw, my, ty;
 	Client *c = NULL;
 	Client *fc = NULL;
 	double mfact = 0;
@@ -642,15 +717,16 @@ void right_tile(Monitor *m) {
 
 	n = m->visible_tiling_clients;
 	master_num = m->pertag->nmasters[m->pertag->curtag];
+	master_num = n > master_num ? master_num : n;
 	stack_num = n - master_num;
 
 	if (n == 0)
 		return;
 
-	unsigned int cur_gappiv = enablegaps ? m->gappiv : 0;
-	unsigned int cur_gappih = enablegaps ? m->gappih : 0;
-	unsigned int cur_gappov = enablegaps ? m->gappov : 0;
-	unsigned int cur_gappoh = enablegaps ? m->gappoh : 0;
+	uint32_t cur_gappiv = enablegaps ? m->gappiv : 0;
+	uint32_t cur_gappih = enablegaps ? m->gappih : 0;
+	uint32_t cur_gappov = enablegaps ? m->gappov : 0;
+	uint32_t cur_gappoh = enablegaps ? m->gappoh : 0;
 
 	cur_gappiv = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappiv;
 	cur_gappih = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappih;
@@ -674,15 +750,26 @@ void right_tile(Monitor *m) {
 		mw = m->w.width - 2 * cur_gappoh + cur_gappih * ie;
 	i = 0;
 	my = ty = cur_gappov;
+
+	uint32_t master_surplus_height =
+		(m->w.height - 2 * cur_gappov - cur_gappiv * ie * (master_num - 1));
+	float master_surplus_ratio = 1.0;
+
+	uint32_t slave_surplus_height =
+		(m->w.height - 2 * cur_gappov - cur_gappiv * ie * (stack_num - 1));
+	float slave_surplus_ratio = 1.0;
+
 	wl_list_for_each(c, &clients, link) {
 		if (!VISIBLEON(c, m) || !ISTILED(c))
 			continue;
 		if (i < m->pertag->nmasters[m->pertag->curtag]) {
 			r = MIN(n, m->pertag->nmasters[m->pertag->curtag]) - i;
 			if (c->master_inner_per > 0.0f) {
-				h = (m->w.height - 2 * cur_gappov -
-					 cur_gappiv * ie * (master_num - 1)) *
-					c->master_inner_per;
+				h = master_surplus_height * c->master_inner_per /
+					master_surplus_ratio;
+				master_surplus_height = master_surplus_height - h;
+				master_surplus_ratio =
+					master_surplus_ratio - c->master_inner_per;
 				c->master_mfact_per = mfact;
 			} else {
 				h = (m->w.height - my - cur_gappov -
@@ -702,21 +789,22 @@ void right_tile(Monitor *m) {
 			my += c->geom.height + cur_gappiv * ie;
 		} else {
 			r = n - i;
-			if (c->stack_innder_per > 0.0f) {
-				h = (m->w.height - 2 * cur_gappov -
-					 cur_gappiv * ie * (stack_num - 1)) *
-					c->stack_innder_per;
+			if (c->stack_inner_per > 0.0f) {
+				h = slave_surplus_height * c->stack_inner_per /
+					slave_surplus_ratio;
+				slave_surplus_height = slave_surplus_height - h;
+				slave_surplus_ratio = slave_surplus_ratio - c->stack_inner_per;
 				c->master_mfact_per = mfact;
 			} else {
 				h = (m->w.height - ty - cur_gappov -
 					 cur_gappiv * ie * (r - 1)) /
 					r;
-				c->stack_innder_per = h / (m->w.height - ty - cur_gappov -
-										   cur_gappiv * ie * (r - 1));
+				c->stack_inner_per = h / (m->w.height - ty - cur_gappov -
+										  cur_gappiv * ie * (r - 1));
 				c->master_mfact_per = mfact;
 			}
 
-			// wlr_log(WLR_ERROR, "stack_innder_per: %f", c->stack_innder_per);
+			// wlr_log(WLR_ERROR, "stack_inner_per: %f", c->stack_inner_per);
 
 			resize(c,
 				   (struct wlr_box){.x = m->w.x + cur_gappoh,
@@ -735,8 +823,8 @@ monocle(Monitor *m) {
 	Client *c = NULL;
 	struct wlr_box geom;
 
-	unsigned int cur_gappov = enablegaps ? m->gappov : 0;
-	unsigned int cur_gappoh = enablegaps ? m->gappoh : 0;
+	uint32_t cur_gappov = enablegaps ? m->gappov : 0;
+	uint32_t cur_gappoh = enablegaps ? m->gappoh : 0;
 
 	cur_gappoh = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappoh;
 	cur_gappov = smartgaps && m->visible_tiling_clients == 1 ? 0 : cur_gappov;
@@ -752,4 +840,15 @@ monocle(Monitor *m) {
 	}
 	if ((c = focustop(m)))
 		wlr_scene_node_raise_to_top(&c->scene->node);
+}
+
+void tgmix(Monitor *m) {
+	uint32_t n = m->visible_tiling_clients;
+	if (n <= 3) {
+		tile(m);
+		return;
+	} else {
+		grid(m);
+		return;
+	}
 }

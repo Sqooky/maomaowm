@@ -1,5 +1,4 @@
-void layer_actual_size(LayerSurface *l, unsigned int *width,
-					   unsigned int *height) {
+void layer_actual_size(LayerSurface *l, uint32_t *width, uint32_t *height) {
 	struct wlr_box box;
 
 	if (l->animation.running) {
@@ -213,9 +212,8 @@ void layer_scene_buffer_apply_effect(struct wlr_scene_buffer *buffer, int sx,
 
 	struct wlr_surface *surface = scene_surface->surface;
 
-	unsigned int surface_width =
-		surface->current.width * buffer_data->width_scale;
-	unsigned int surface_height =
+	uint32_t surface_width = surface->current.width * buffer_data->width_scale;
+	uint32_t surface_height =
 		surface->current.height * buffer_data->height_scale;
 
 	if (surface_height > 0 && surface_width > 0) {
@@ -234,23 +232,27 @@ void fadeout_layer_animation_next_tick(LayerSurface *l) {
 	if (!l)
 		return;
 
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	uint32_t passed_time = timespec_to_ms(&now) - l->animation.time_started;
 	double animation_passed =
-		l->animation.total_frames
-			? (double)l->animation.passed_frames / l->animation.total_frames
+		l->animation.duration
+			? (double)passed_time / (double)l->animation.duration
 			: 1.0;
+
 	int type = l->animation.action = l->animation.action;
 	double factor = find_animation_curve_at(animation_passed, type);
-	unsigned int width =
-		l->animation.initial.width +
-		(l->current.width - l->animation.initial.width) * factor;
-	unsigned int height =
+	uint32_t width = l->animation.initial.width +
+					 (l->current.width - l->animation.initial.width) * factor;
+	uint32_t height =
 		l->animation.initial.height +
 		(l->current.height - l->animation.initial.height) * factor;
 
-	unsigned int x = l->animation.initial.x +
-					 (l->current.x - l->animation.initial.x) * factor;
-	unsigned int y = l->animation.initial.y +
-					 (l->current.y - l->animation.initial.y) * factor;
+	uint32_t x = l->animation.initial.x +
+				 (l->current.x - l->animation.initial.x) * factor;
+	uint32_t y = l->animation.initial.y +
+				 (l->current.y - l->animation.initial.y) * factor;
 
 	wlr_scene_node_set_position(&l->scene->node, x, y);
 
@@ -274,19 +276,23 @@ void fadeout_layer_animation_next_tick(LayerSurface *l) {
 		.height = height,
 	};
 
-	double opacity = MAX(fadeout_begin_opacity - animation_passed, 0.0f);
+	double opacity_eased_progress =
+		find_animation_curve_at(animation_passed, OPAFADEOUT);
+
+	double percent = fadeout_begin_opacity -
+					 (opacity_eased_progress * fadeout_begin_opacity);
+
+	double opacity = MAX(percent, 0.0f);
 
 	if (animation_fade_out)
 		wlr_scene_node_for_each_buffer(&l->scene->node,
 									   scene_buffer_apply_opacity, &opacity);
 
-	if (animation_passed == 1.0) {
+	if (animation_passed >= 1.0) {
 		wl_list_remove(&l->fadeout_link);
 		wlr_scene_node_destroy(&l->scene->node);
 		free(l);
 		l = NULL;
-	} else {
-		l->animation.passed_frames++;
 	}
 }
 
@@ -295,27 +301,36 @@ void layer_animation_next_tick(LayerSurface *l) {
 	if (!l || !l->mapped)
 		return;
 
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	uint32_t passed_time = timespec_to_ms(&now) - l->animation.time_started;
 	double animation_passed =
-		l->animation.total_frames
-			? (double)l->animation.passed_frames / l->animation.total_frames
+		l->animation.duration
+			? (double)passed_time / (double)l->animation.duration
 			: 1.0;
 
 	int type = l->animation.action == NONE ? MOVE : l->animation.action;
 	double factor = find_animation_curve_at(animation_passed, type);
 
-	unsigned int width =
-		l->animation.initial.width +
-		(l->current.width - l->animation.initial.width) * factor;
-	unsigned int height =
+	uint32_t width = l->animation.initial.width +
+					 (l->current.width - l->animation.initial.width) * factor;
+	uint32_t height =
 		l->animation.initial.height +
 		(l->current.height - l->animation.initial.height) * factor;
 
-	unsigned int x = l->animation.initial.x +
-					 (l->current.x - l->animation.initial.x) * factor;
-	unsigned int y = l->animation.initial.y +
-					 (l->current.y - l->animation.initial.y) * factor;
+	uint32_t x = l->animation.initial.x +
+				 (l->current.x - l->animation.initial.x) * factor;
+	uint32_t y = l->animation.initial.y +
+				 (l->current.y - l->animation.initial.y) * factor;
 
-	double opacity = MIN(fadein_begin_opacity + animation_passed, 1.0f);
+	double opacity_eased_progress =
+		find_animation_curve_at(animation_passed, OPAFADEIN);
+
+	double opacity =
+		MIN(fadein_begin_opacity +
+				opacity_eased_progress * (1.0 - fadein_begin_opacity),
+			1.0f);
 
 	if (animation_fade_in)
 		wlr_scene_node_for_each_buffer(&l->scene->node,
@@ -347,12 +362,10 @@ void layer_animation_next_tick(LayerSurface *l) {
 		.height = height,
 	};
 
-	if (animation_passed == 1.0) {
+	if (animation_passed >= 1.0) {
 		l->animation.running = false;
 		l->need_output_flush = false;
 		l->animation.action = MOVE;
-	} else {
-		l->animation.passed_frames++;
 	}
 }
 
@@ -446,10 +459,8 @@ void init_fadeout_layers(LayerSurface *l) {
 		fadeout_layer->current.height = 0;
 	}
 
-	// 计算动画帧数
-	fadeout_layer->animation.passed_frames = 0;
-	fadeout_layer->animation.total_frames =
-		fadeout_layer->animation.duration / all_output_frame_duration_ms();
+	// 动画开始时间
+	fadeout_layer->animation.time_started = get_now_in_ms();
 
 	// 将节点插入到关闭动画链表中，屏幕刷新哪里会检查链表中是否有节点可以应用于动画
 	wlr_scene_node_set_enabled(&fadeout_layer->scene->node, true);
@@ -532,23 +543,11 @@ void layer_commit(LayerSurface *l) {
 		}
 
 		l->animation.initial = l->animainit_geom;
-		// 设置动画速度
-		l->animation.passed_frames = 0;
-		l->animation.total_frames =
-			l->animation.duration / output_frame_duration_ms(l->mon);
+		l->animation.time_started = get_now_in_ms();
 
 		// 标记动画开始
 		l->animation.running = true;
 		l->animation.should_animate = false;
-	} else {
-		// 如果动画没有开始,且被判定为不应该动画，
-		// 则设置总帧数为1,不然其他地方一旦获取动画
-		// 进度，总帧数作为分母会造成除零
-		// 比如动画类型为none的时候
-		if (!l->animation.running) {
-			l->animation.passed_frames = 1;
-			l->animation.total_frames = 1;
-		}
 	}
 	// 请求刷新屏幕
 	wlr_output_schedule_frame(l->mon->wlr_output);

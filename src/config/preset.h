@@ -25,39 +25,44 @@ uint32_t animation_duration_move = 500;	 // Animation move speed
 uint32_t animation_duration_open = 400;	 // Animation open speed
 uint32_t animation_duration_tag = 300;	 // Animation tag speed
 uint32_t animation_duration_close = 300; // Animation close speed
-double animation_curve_move[4] = {0.46, 1.0, 0.29, 0.99};  // 动画曲线
-double animation_curve_open[4] = {0.46, 1.0, 0.29, 0.99};  // 动画曲线
-double animation_curve_tag[4] = {0.46, 1.0, 0.29, 0.99};   // 动画曲线
-double animation_curve_close[4] = {0.46, 1.0, 0.29, 0.99}; // 动画曲线
+uint32_t animation_duration_focus = 0;	 // Animation focus opacity speed
+double animation_curve_move[4] = {0.46, 1.0, 0.29, 0.99};	   // 动画曲线
+double animation_curve_open[4] = {0.46, 1.0, 0.29, 0.99};	   // 动画曲线
+double animation_curve_tag[4] = {0.46, 1.0, 0.29, 0.99};	   // 动画曲线
+double animation_curve_close[4] = {0.46, 1.0, 0.29, 0.99};	   // 动画曲线
+double animation_curve_focus[4] = {0.46, 1.0, 0.29, 0.99};	   // 动画曲线
+double animation_curve_opafadein[4] = {0.46, 1.0, 0.29, 0.99}; // 动画曲线
+double animation_curve_opafadeout[4] = {0.5, 0.5, 0.5, 0.5};   // 动画曲线
 
 /* appearance */
-unsigned int axis_bind_apply_timeout = 100; // 滚轮绑定动作的触发的时间间隔
-unsigned int focus_on_activate = 1;			// 收到窗口激活请求是否自动跳转聚焦
-unsigned int new_is_master = 1;				// 新窗口是否插在头部
-double default_mfact = 0.55f;				// master 窗口比例
-unsigned int default_nmaster = 1;			// 默认master数量
-int center_master_overspread = 0;			// 中心master时是否铺满
-int center_when_single_stack = 1;			// 单个stack时是否居中
+uint32_t axis_bind_apply_timeout = 100; // 滚轮绑定动作的触发的时间间隔
+uint32_t focus_on_activate = 1;			// 收到窗口激活请求是否自动跳转聚焦
+uint32_t new_is_master = 1;				// 新窗口是否插在头部
+double default_mfact = 0.55f;			// master 窗口比例
+uint32_t default_nmaster = 1;			// 默认master数量
+int center_master_overspread = 0;		// 中心master时是否铺满
+int center_when_single_stack = 1;		// 单个stack时是否居中
 /* logging */
 int log_level = WLR_ERROR;
-unsigned int numlockon = 1; // 是否打开右边小键盘
-unsigned int capslock = 0;	// 是否启用快捷键
+uint32_t numlockon = 0; // 是否打开右边小键盘
+uint32_t capslock = 0;	// 是否启用快捷键
 
-unsigned int ov_tab_mode = 0;	 // alt tab切换模式
-unsigned int hotarea_size = 10;	 // 热区大小,10x10
-unsigned int enable_hotarea = 1; // 是否启用鼠标热区
-int smartgaps = 0;	 /* 1 means no outer gap when there is only one window */
-int sloppyfocus = 1; /* focus follows mouse */
-unsigned int gappih = 5;  /* horiz inner gap between windows */
-unsigned int gappiv = 5;  /* vert inner gap between windows */
-unsigned int gappoh = 10; /* horiz outer gap between windows and screen edge */
-unsigned int gappov = 10; /* vert outer gap between windows and screen edge */
+uint32_t ov_tab_mode = 0;	 // alt tab切换模式
+uint32_t hotarea_size = 10;	 // 热区大小,10x10
+uint32_t enable_hotarea = 1; // 是否启用鼠标热区
+int smartgaps = 0;	  /* 1 means no outer gap when there is only one window */
+int sloppyfocus = 1;  /* focus follows mouse */
+uint32_t gappih = 5;  /* horiz inner gap between windows */
+uint32_t gappiv = 5;  /* vert inner gap between windows */
+uint32_t gappoh = 10; /* horiz outer gap between windows and screen edge */
+uint32_t gappov = 10; /* vert outer gap between windows and screen edge */
 float scratchpad_width_ratio = 0.8;
 float scratchpad_height_ratio = 0.9;
 
 int scroller_structs = 20;
 float scroller_default_proportion = 0.9;
 float scroller_default_proportion_single = 1.0;
+int scroller_ignore_proportion_single = 0;
 int scroller_focus_center = 0;
 int scroller_prefer_center = 0;
 int focus_cross_monitor = 0;
@@ -70,19 +75,19 @@ int no_radius_when_single = 0;
 int snap_distance = 30;
 int enable_floating_snap = 0;
 int drag_tile_to_tile = 0;
-unsigned int cursor_size = 24;
-unsigned int cursor_hide_timeout = 0;
+uint32_t cursor_size = 24;
+uint32_t cursor_hide_timeout = 0;
 
-unsigned int swipe_min_threshold = 1;
+uint32_t swipe_min_threshold = 1;
 
-int inhibit_regardless_of_visibility =
+int idleinhibit_ignore_visible =
 	0; /* 1 means idle inhibitors will disable idle tracking even if it's
 		  surface isn't visible  */
-unsigned int borderpx = 4; /* border pixel of windows */
+uint32_t borderpx = 4; /* border pixel of windows */
 float rootcolor[] = COLOR(0x323232ff);
 float bordercolor[] = COLOR(0x444444ff);
 float focuscolor[] = COLOR(0xc66b25ff);
-float maxmizescreencolor[] = COLOR(0x89aa61ff);
+float maximizescreencolor[] = COLOR(0x89aa61ff);
 float urgentcolor[] = COLOR(0xad401fff);
 float scratchpadcolor[] = COLOR(0x516c93ff);
 float globalcolor[] = COLOR(0xb153a7ff);
@@ -100,7 +105,10 @@ int warpcursor = 1;			  /* Warp cursor to focused client */
 int xwayland_persistence = 1; /* xwayland persistence */
 int syncobj_enable = 0;
 int adaptive_sync = 0;
-double drag_refresh_interval = 30.0;
+int allow_lock_transparent = 0;
+double drag_refresh_interval = 16.0;
+int allow_tearing = TEARING_DISABLED;
+int allow_shortcuts_inhibit = SHORTCUTS_INHIBIT_ENABLE;
 
 /* keyboard */
 
@@ -113,6 +121,19 @@ char xkb_rules_model[256];
 char xkb_rules_layout[256];
 char xkb_rules_variant[256];
 char xkb_rules_options[256];
+
+/* keyboard */
+static const struct xkb_rule_names xkb_fallback_rules = {
+	.layout = "us",
+	.variant = NULL,
+	.model = NULL,
+	.rules = NULL,
+	.options = NULL,
+};
+
+static const struct xkb_rule_names xkb_default_rules = {
+	.options = NULL,
+};
 
 struct xkb_rule_names xkb_rules = {
 	/* can specify fields: rules, model, layout, variant, options */
@@ -147,7 +168,7 @@ LIBINPUT_CONFIG_SCROLL_EDGE
 LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN
 */
 enum libinput_config_scroll_method scroll_method = LIBINPUT_CONFIG_SCROLL_2FG;
-unsigned int scroll_button = 274;
+uint32_t scroll_button = 274;
 
 /* You can choose between:
 LIBINPUT_CONFIG_CLICK_METHOD_NONE
@@ -156,6 +177,8 @@ LIBINPUT_CONFIG_CLICK_METHOD_CLICKFINGER
 */
 enum libinput_config_click_method click_method =
 	LIBINPUT_CONFIG_CLICK_METHOD_BUTTON_AREAS;
+
+double axis_scroll_factor = 1.0;
 
 /* You can choose between:
 LIBINPUT_CONFIG_SEND_EVENTS_ENABLED
@@ -205,7 +228,7 @@ float blur_params_saturation = 1.2;
 int shadows = 0;
 int shadow_only_floating = 1;
 int layer_shadows = 0;
-unsigned int shadows_size = 10;
+uint32_t shadows_size = 10;
 double shadows_blur = 15;
 int shadows_position_x = 0;
 int shadows_position_y = 0;

@@ -359,7 +359,7 @@ static inline void client_set_maximized(Client *c, bool maximized) {
 static inline void client_set_tiled(Client *c, uint32_t edges) {
 	struct wlr_xdg_toplevel *toplevel;
 #ifdef XWAYLAND
-	if (client_is_x11(c)) {
+	if (client_is_x11(c) && c->force_maximize) {
 		wlr_xwayland_surface_set_maximized(c->surface.xwayland,
 										   edges != WLR_EDGE_NONE,
 										   edges != WLR_EDGE_NONE);
@@ -374,7 +374,7 @@ static inline void client_set_tiled(Client *c, uint32_t edges) {
 		wlr_xdg_toplevel_set_tiled(c->surface.xdg->toplevel, edges);
 	}
 
-	if (!c->ignore_maximize && c->force_maximize) {
+	if (c->force_maximize) {
 		wlr_xdg_toplevel_set_maximized(toplevel, edges != WLR_EDGE_NONE);
 	}
 }
@@ -389,6 +389,21 @@ static inline void client_set_suspended(Client *c, int suspended) {
 }
 
 static inline int client_should_ignore_focus(Client *c) {
+
+#ifdef XWAYLAND
+	if (client_is_x11(c)) {
+		struct wlr_xwayland_surface *surface = c->surface.xwayland;
+
+		if (!surface->hints)
+			return 0;
+
+		return !surface->hints->input;
+	}
+#endif
+	return 0;
+}
+
+static inline int client_is_x11_popup(Client *c) {
 
 #ifdef XWAYLAND
 	if (client_is_x11(c)) {
@@ -473,6 +488,18 @@ static inline bool client_request_minimize(Client *c, void *data) {
 	return c->surface.xdg->toplevel->requested.minimized;
 }
 
+static inline bool client_request_maximize(Client *c, void *data) {
+
+#ifdef XWAYLAND
+	if (client_is_x11(c)) {
+		struct wlr_xwayland_surface *surface = c->surface.xwayland;
+		return surface->maximized_vert || surface->maximized_horz;
+	}
+#endif
+
+	return c->surface.xdg->toplevel->requested.maximized;
+}
+
 static inline void client_set_size_bound(Client *c) {
 	struct wlr_xdg_toplevel *toplevel;
 	struct wlr_xdg_toplevel_state state;
@@ -485,16 +512,16 @@ static inline void client_set_size_bound(Client *c) {
 		if (!size_hints)
 			return;
 
-		if ((unsigned int)c->geom.width - 2 * c->bw < size_hints->min_width &&
+		if ((uint32_t)c->geom.width - 2 * c->bw < size_hints->min_width &&
 			size_hints->min_width > 0)
 			c->geom.width = size_hints->min_width + 2 * c->bw;
-		if ((unsigned int)c->geom.height - 2 * c->bw < size_hints->min_height &&
+		if ((uint32_t)c->geom.height - 2 * c->bw < size_hints->min_height &&
 			size_hints->min_height > 0)
 			c->geom.height = size_hints->min_height + 2 * c->bw;
-		if ((unsigned int)c->geom.width - 2 * c->bw > size_hints->max_width &&
+		if ((uint32_t)c->geom.width - 2 * c->bw > size_hints->max_width &&
 			size_hints->max_width > 0)
 			c->geom.width = size_hints->max_width + 2 * c->bw;
-		if ((unsigned int)c->geom.height - 2 * c->bw > size_hints->max_height &&
+		if ((uint32_t)c->geom.height - 2 * c->bw > size_hints->max_height &&
 			size_hints->max_height > 0)
 			c->geom.height = size_hints->max_height + 2 * c->bw;
 		return;
@@ -503,19 +530,19 @@ static inline void client_set_size_bound(Client *c) {
 
 	toplevel = c->surface.xdg->toplevel;
 	state = toplevel->current;
-	if ((unsigned int)c->geom.width - 2 * c->bw < state.min_width &&
+	if ((uint32_t)c->geom.width - 2 * c->bw < state.min_width &&
 		state.min_width > 0) {
 		c->geom.width = state.min_width + 2 * c->bw;
 	}
-	if ((unsigned int)c->geom.height - 2 * c->bw < state.min_height &&
+	if ((uint32_t)c->geom.height - 2 * c->bw < state.min_height &&
 		state.min_height > 0) {
 		c->geom.height = state.min_height + 2 * c->bw;
 	}
-	if ((unsigned int)c->geom.width - 2 * c->bw > state.max_width &&
+	if ((uint32_t)c->geom.width - 2 * c->bw > state.max_width &&
 		state.max_width > 0) {
 		c->geom.width = state.max_width + 2 * c->bw;
 	}
-	if ((unsigned int)c->geom.height - 2 * c->bw > state.max_height &&
+	if ((uint32_t)c->geom.height - 2 * c->bw > state.max_height &&
 		state.max_height > 0) {
 		c->geom.height = state.max_height + 2 * c->bw;
 	}
