@@ -3,3 +3,5 @@
 #include "foreign-toplevel.h"
 #include "tablet.h"
 #include "text-input.h"
+#include "tearing.h"
+#include "text-input.h"
