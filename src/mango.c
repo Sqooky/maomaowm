@@ -70,9 +70,6 @@
 #include <wlr/types/wlr_single_pixel_buffer_v1.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_switch.h>
-#include <wlr/types/wlr_tablet_pad.h>
-#include <wlr/types/wlr_tablet_tool.h>
-#include <wlr/types/wlr_tablet_v2.h>
 #include <wlr/types/wlr_viewporter.h>
 #include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_virtual_pointer_v1.h>
@@ -3350,12 +3347,6 @@ void inputdevice(struct wl_listener *listener, void *data) {
 	case WLR_INPUT_DEVICE_KEYBOARD:
 		createkeyboard(wlr_keyboard_from_input_device(device));
 		break;
-	case WLR_INPUT_DEVICE_TABLET:
-		createtablet(device);
-		break;
-	case WLR_INPUT_DEVICE_TABLET_PAD:
-		tablet_pad = wlr_tablet_pad_create(tablet_mgr, seat, device);
-		break;
 	case WLR_INPUT_DEVICE_POINTER:
 		createpointer(wlr_pointer_from_input_device(device));
 		break;
@@ -5140,11 +5131,6 @@ void setup(void) {
 	wl_signal_add(&cursor->events.button, &cursor_button);
 	wl_signal_add(&cursor->events.axis, &cursor_axis);
 	wl_signal_add(&cursor->events.frame, &cursor_frame);
-	wl_signal_add(&cursor->events.tablet_tool_proximity,
-				  &tablet_tool_proximity);
-	wl_signal_add(&cursor->events.tablet_tool_axis, &tablet_tool_axis);
-	wl_signal_add(&cursor->events.tablet_tool_button, &tablet_tool_button);
-	wl_signal_add(&cursor->events.tablet_tool_tip, &tablet_tool_tip);
 
 	// 这两句代码会造成obs窗口里的鼠标光标消失,不知道注释有什么影响
 	cursor_shape_mgr = wlr_cursor_shape_manager_v1_create(dpy, 1);
