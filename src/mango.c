@@ -573,6 +573,7 @@ static void axisnotify(struct wl_listener *listener,
 					   void *data); // 滚轮事件处理
 static void buttonpress(struct wl_listener *listener,
 						void *data); // 鼠标按键事件处理
+static bool handle_buttonpress(struct wlr_pointer_button_event *event);
 static int32_t ongesture(struct wlr_pointer_swipe_end_event *event);
 static void swipe_begin(struct wl_listener *listener, void *data);
 static void swipe_update(struct wl_listener *listener, void *data);
@@ -1998,6 +1999,13 @@ bool check_trackpad_disabled(struct wlr_pointer *pointer) {
 void // 鼠标按键事件
 buttonpress(struct wl_listener *listener, void *data) {
 	struct wlr_pointer_button_event *event = data;
+
+	if (!handle_buttonpress(event))
+		wlr_seat_pointer_notify_button(seat, event->time_msec, event->button,
+									   event->state);
+}
+
+bool handle_buttonpress(struct wlr_pointer_button_event *event) {
 	struct wlr_keyboard *hard_keyboard, *keyboard;
 	uint32_t hard_mods, mods;
 	Client *c = NULL;
@@ -2013,7 +2021,7 @@ buttonpress(struct wl_listener *listener, void *data) {
 	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
 	if (check_trackpad_disabled(event->pointer)) {
-		return;
+		return true;
 	}
 
 	switch (event->state) {
@@ -2060,12 +2068,12 @@ buttonpress(struct wl_listener *listener, void *data) {
 
 			if (selmon->isoverview && event->button == BTN_LEFT && c) {
 				toggleoverview(&(Arg){.i = 1});
-				return;
+				return true;
 			}
 
 			if (selmon->isoverview && event->button == BTN_RIGHT && c) {
 				pending_kill_client(c);
-				return;
+				return true;
 			}
 
 			if (CLEANMASK(mods) == CLEANMASK(m->mod) &&
@@ -2073,7 +2081,7 @@ buttonpress(struct wl_listener *listener, void *data) {
 				(CLEANMASK(m->mod) != 0 ||
 				 (event->button != BTN_LEFT && event->button != BTN_RIGHT))) {
 				m->func(&m->arg);
-				return;
+				return true;
 			}
 		}
 		break;
@@ -2105,16 +2113,14 @@ buttonpress(struct wl_listener *listener, void *data) {
 				apply_window_snap(tmpc);
 			}
 			tmpc->drag_to_tile = false;
-			return;
+			return true;
 		} else {
 			cursor_mode = CurNormal;
 		}
 		break;
 	}
-	/* If the event wasn't handled by the compositor, notify the client with
-	 * pointer focus that a button press has occurred */
-	wlr_seat_pointer_notify_button(seat, event->time_msec, event->button,
-								   event->state);
+	/* If the event wasn't handled by the compositor, return false */
+	return false;
 }
 
 void checkidleinhibitor(struct wlr_surface *exclude) {

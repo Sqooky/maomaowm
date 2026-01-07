@@ -217,15 +217,22 @@ void tablettoolbutton(struct wl_listener *listener, void *data) {
 void tablettooltip(struct wl_listener *listener, void *data) {
 	struct wlr_tablet_tool_tip_event *event = data;
 
+	struct wlr_pointer_button_event fakeptrbtnevent = {
+		.button = BTN_LEFT,
+		.state = event->state == WLR_TABLET_TOOL_TIP_UP
+					 ? WL_POINTER_BUTTON_STATE_RELEASED
+					 : WL_POINTER_BUTTON_STATE_PRESSED,
+		.time_msec = event->time_msec,
+	};
+
+	if (handle_buttonpress(&fakeptrbtnevent))
+		return;
+
 	if (!tablet_curr_surface) {
-		struct wlr_pointer_button_event fakeptrbtnevent = {
-			.button = BTN_LEFT,
-			.state = event->state == WLR_TABLET_TOOL_TIP_UP
-						 ? WL_POINTER_BUTTON_STATE_RELEASED
-						 : WL_POINTER_BUTTON_STATE_PRESSED,
-			.time_msec = event->time_msec,
-		};
-		buttonpress(NULL, (void *)&fakeptrbtnevent);
+		wlr_seat_pointer_notify_button(seat, fakeptrbtnevent.time_msec,
+									   fakeptrbtnevent.button,
+									   fakeptrbtnevent.state);
+		return;
 	}
 
 	if (event->state == WLR_TABLET_TOOL_TIP_UP) {
