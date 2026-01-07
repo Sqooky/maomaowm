@@ -106,6 +106,8 @@ void tabletapplymap(double tablet_width, double tablet_height,
 void tablettoolmotion(struct wlr_tablet_v2_tablet_tool *tool, bool change_x,
 					  bool change_y, double x, double y, double dx, double dy) {
 	struct wlr_surface *surface = NULL;
+	Client *c = NULL, *w = NULL;
+	LayerSurface *l = NULL;
 	double sx, sy;
 
 	if (!change_x && !change_y)
@@ -128,7 +130,23 @@ void tablettoolmotion(struct wlr_tablet_v2_tablet_tool *tool, bool change_x,
 
 	motionnotify(0, NULL, 0, 0, 0, 0);
 
-	xytonode(cursor->x, cursor->y, &surface, NULL, NULL, &sx, &sy);
+	xytonode(cursor->x, cursor->y, &surface, &c, NULL, &sx, &sy);
+	if (cursor_mode == CurPressed && !seat->drag &&
+		surface != seat->pointer_state.focused_surface &&
+		toplevel_from_wlr_surface(seat->pointer_state.focused_surface, &w,
+								  &l) >= 0) {
+		c = w;
+		surface = seat->pointer_state.focused_surface;
+		sx = cursor->x - (l ? l->scene->node.x : w->geom.x);
+		sy = cursor->y - (l ? l->scene->node.y : w->geom.y);
+	}
+
+	if (sloppyfocus && c && c->scene->node.enabled &&
+		(surface != seat->pointer_state.focused_surface ||
+		 (selmon && selmon->sel && c != selmon->sel)) &&
+		!client_is_unmanaged(c))
+		focusclient(c, 0);
+
 	if (surface && !wlr_surface_accepts_tablet_v2(surface, tablet))
 		surface = NULL;
 
