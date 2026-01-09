@@ -2020,7 +2020,7 @@ bool handle_buttonpress(struct wlr_pointer_button_event *event) {
 	handlecursoractivity();
 	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
-	if (check_trackpad_disabled(event->pointer)) {
+	if (event->pointer && check_trackpad_disabled(event->pointer)) {
 		return true;
 	}
 
