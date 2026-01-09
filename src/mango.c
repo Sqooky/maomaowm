@@ -692,7 +692,7 @@ static void show_scratchpad(Client *c);
 static void show_hide_client(Client *c);
 static void tag_client(const Arg *arg, Client *target_client);
 
-static struct wlr_box setclient_coordinate_center(Client *c,
+static struct wlr_box setclient_coordinate_center(Client *c, Monitor *m,
 												  struct wlr_box geom,
 												  int32_t offsetx,
 												  int32_t offsety);
@@ -955,7 +955,8 @@ void client_change_mon(Client *c, Monitor *m) {
 	setmon(c, m, c->tags, true);
 	reset_foreign_tolevel(c);
 	if (c->isfloating) {
-		c->float_geom = c->geom = setclient_coordinate_center(c, c->geom, 0, 0);
+		c->float_geom = c->geom =
+			setclient_coordinate_center(c, c->mon, c->geom, 0, 0);
 	}
 }
 
@@ -1022,7 +1023,7 @@ void show_scratchpad(Client *c) {
 							 : c->mon->w.height * scratchpad_height_ratio;
 		// 重新计算居中的坐标
 		c->float_geom = c->geom = c->animainit_geom = c->animation.current =
-			setclient_coordinate_center(c, c->geom, 0, 0);
+			setclient_coordinate_center(c, c->mon, c->geom, 0, 0);
 		c->iscustomsize = 1;
 		resize(c, c->geom, 0);
 	}
@@ -1092,7 +1093,8 @@ bool switch_scratchpad_client_state(Client *c) {
 		c->float_geom.height = (int32_t)(c->float_geom.height *
 										 c->mon->w.height / oldmon->w.height);
 
-		c->float_geom = setclient_coordinate_center(c, c->float_geom, 0, 0);
+		c->float_geom =
+			setclient_coordinate_center(c, c->mon, c->float_geom, 0, 0);
 
 		// 只有显示状态的scratchpad才需要聚焦和返回true
 		if (c->is_scratchpad_show) {
@@ -1348,7 +1350,7 @@ void applyrules(Client *c) {
 		if (r->offsetx || r->offsety) {
 			c->iscustompos = 1;
 			c->float_geom = c->geom = setclient_coordinate_center(
-				c, c->float_geom, r->offsetx, r->offsety);
+				c, mon, c->float_geom, r->offsetx, r->offsety);
 		}
 		if (c->isfloating) {
 			c->geom = c->float_geom.width > 0 && c->float_geom.height > 0
@@ -1366,7 +1368,8 @@ void applyrules(Client *c) {
 	// the hit size
 	if (!c->iscustompos &&
 		(!client_is_x11(c) || (c->geom.x == 0 && c->geom.y == 0))) {
-		c->float_geom = c->geom = setclient_coordinate_center(c, c->geom, 0, 0);
+		c->float_geom = c->geom =
+			setclient_coordinate_center(c, mon, c->geom, 0, 0);
 	} else {
 		c->float_geom = c->geom;
 	}
@@ -4181,8 +4184,10 @@ void pointerfocus(Client *c, struct wlr_surface *surface, double sx, double sy,
 				  uint32_t time) {
 	struct timespec now;
 
-	if (surface != seat->pointer_state.focused_surface && sloppyfocus && time &&
-		c && c->scene->node.enabled && !client_is_unmanaged(c))
+	if (sloppyfocus && c && time && c->scene->node.enabled &&
+		(surface != seat->pointer_state.focused_surface ||
+		 (selmon && selmon->sel && c != selmon->sel)) &&
+		!client_is_unmanaged(c))
 		focusclient(c, 0);
 
 	/* If surface is NULL, clear pointer focus */
@@ -4544,7 +4549,8 @@ setfloating(Client *c, int32_t floating) {
 
 		// 重新计算居中的坐标
 		if (!client_is_x11(c) && !c->iscustompos)
-			target_box = setclient_coordinate_center(c, target_box, 0, 0);
+			target_box =
+				setclient_coordinate_center(c, c->mon, target_box, 0, 0);
 		else
 			target_box = c->geom;
 
@@ -4560,7 +4566,7 @@ setfloating(Client *c, int32_t floating) {
 			}
 			if (window_size_outofrange) {
 				c->float_geom =
-					setclient_coordinate_center(c, c->float_geom, 0, 0);
+					setclient_coordinate_center(c, c->mon, c->float_geom, 0, 0);
 			}
 			resize(c, c->float_geom, 0);
 		} else {
