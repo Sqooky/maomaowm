@@ -55,8 +55,16 @@ void createtablet(struct wlr_input_device *device) {
 	}
 }
 
-void destroytablet(struct wl_listener *listener, void *data) { tablet = NULL; }
+void destroytablet(struct wl_listener *listener, void *data) {
 
+
+	wl_list_remove(&listener->link);
+
+
+	tablet = NULL;
+
+
+}
 void destroytabletsurfacenotify(struct wl_listener *listener, void *data) {
 	if (tablet_curr_surface)
 		wl_list_remove(&destroy_tablet_surface_listener.link);
@@ -69,10 +77,10 @@ void destroytablettool(struct wl_listener *listener, void *data) {
 }
 
 void tabletapplymap(double tablet_width, double tablet_height,
-		struct wlr_fbox box, double *x, double *y)
+		struct wlr_fbox box, double *x, double *y) 
 {
-	if ((!box.x && !box.y && !box.width && !box.height)
-			|| !tablet_width || !tablet_height) {
+	if ((!box.x && !box.y && !box.width && !box.height) || !tablet_width ||
+		!tablet_height) {
 		return;
 	}
 
