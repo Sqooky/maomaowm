@@ -338,6 +338,9 @@ int32_t killclient(const Arg *arg) {
 }
 
 int32_t moveresize(const Arg *arg) {
+	const char *cursors[] = {"nw-resize", "ne-resize", "sw-resize",
+							 "se-resize"};
+
 	if (cursor_mode != CurNormal && cursor_mode != CurPressed)
 		return 0;
 	xytonode(cursor->x, cursor->y, NULL, &grabc, NULL, NULL, NULL);
@@ -363,10 +366,29 @@ int32_t moveresize(const Arg *arg) {
 		/* Doesn't work for X11 output - the next absolute motion event
 		 * returns the cursor to where it started */
 		if (grabc->isfloating) {
-			wlr_cursor_warp_closest(cursor, NULL,
-									grabc->geom.x + grabc->geom.width,
-									grabc->geom.y + grabc->geom.height);
-			wlr_cursor_set_xcursor(cursor, cursor_mgr, "bottom_right_corner");
+			rzcorner = drag_corner;
+			grabcx = (int)round(cursor->x);
+			grabcy = (int)round(cursor->y);
+			if (rzcorner == 4)
+				/* identify the closest corner index */
+				rzcorner = (grabcx - grabc->geom.x <
+									grabc->geom.x + grabc->geom.width - grabcx
+								? 0
+								: 1) +
+						   (grabcy - grabc->geom.y <
+									grabc->geom.y + grabc->geom.height - grabcy
+								? 0
+								: 2);
+
+			if (drag_warp_cursor) {
+				grabcx = rzcorner & 1 ? grabc->geom.x + grabc->geom.width
+									  : grabc->geom.x;
+				grabcy = rzcorner & 2 ? grabc->geom.y + grabc->geom.height
+									  : grabc->geom.y;
+				wlr_cursor_warp_closest(cursor, NULL, grabcx, grabcy);
+			}
+
+			wlr_cursor_set_xcursor(cursor, cursor_mgr, cursors[rzcorner]);
 		} else {
 			wlr_cursor_set_xcursor(cursor, cursor_mgr, "grab");
 		}
@@ -885,9 +907,7 @@ int32_t switch_keyboard_layout(const Arg *arg) {
 	uint32_t latched = keyboard->modifiers.latched;
 	uint32_t locked = keyboard->modifiers.locked;
 
-	wlr_keyboard_set_keymap(keyboard, keyboard->keymap);
 	wlr_keyboard_notify_modifiers(keyboard, depressed, latched, locked, next);
-	keyboard->modifiers.group = 0;
 
 	// 7. 更新 seat
 	wlr_seat_set_keyboard(seat, keyboard);
@@ -901,10 +921,7 @@ int32_t switch_keyboard_layout(const Arg *arg) {
 
 		struct wlr_keyboard *tkb = (struct wlr_keyboard *)id->device_data;
 
-		wlr_keyboard_set_keymap(tkb, keyboard->keymap);
 		wlr_keyboard_notify_modifiers(tkb, depressed, latched, locked, next);
-		tkb->modifiers.group = 0;
-
 		// 7. 更新 seat
 		wlr_seat_set_keyboard(seat, tkb);
 		wlr_seat_keyboard_notify_modifiers(seat, &tkb->modifiers);
@@ -1200,13 +1217,15 @@ int32_t togglefloating(const Arg *arg) {
 	if (!sel)
 		return 0;
 
+	bool isfloating = sel->isfloating;
+
 	if ((sel->isfullscreen || sel->ismaximizescreen)) {
-		sel->isfloating = 1;
+		isfloating = 1;
 	} else {
-		sel->isfloating = !sel->isfloating;
+		isfloating = !sel->isfloating;
 	}
 
-	setfloating(sel, sel->isfloating);
+	setfloating(sel, isfloating);
 	return 0;
 }
 
@@ -1422,8 +1441,13 @@ int32_t viewcrossmon(const Arg *arg) {
 }
 
 int32_t tagcrossmon(const Arg *arg) {
-	if (!selmon->sel)
+	if (!selmon || !selmon->sel)
 		return 0;
+
+	if (regex_match(selmon->wlr_output->name, arg->v)) {
+		tag_client(arg, selmon->sel);
+		return 0;
+	}
 
 	tagmon(&(Arg){.ui = arg->ui, .i = UNDIR, .v = arg->v});
 	return 0;
@@ -1499,6 +1523,16 @@ int32_t minimized(const Arg *arg) {
 	return 0;
 }
 
+void fix_mon_tagset_from_overview(Monitor *m) {
+	if (m->tagset[m->seltags] == (m->ovbk_prev_tagset & TAGMASK)) {
+		m->tagset[m->seltags ^ 1] = m->ovbk_current_tagset;
+		m->pertag->prevtag = get_tags_first_tag_num(m->ovbk_current_tagset);
+	} else {
+		m->tagset[m->seltags ^ 1] = m->ovbk_prev_tagset;
+		m->pertag->prevtag = get_tags_first_tag_num(m->ovbk_prev_tagset);
+	}
+}
+
 int32_t toggleoverview(const Arg *arg) {
 	Client *c = NULL;
 
@@ -1520,6 +1554,8 @@ int32_t toggleoverview(const Arg *arg) {
 			visible_client_number++;
 		}
 		if (visible_client_number > 0) {
+			selmon->ovbk_current_tagset = selmon->tagset[selmon->seltags];
+			selmon->ovbk_prev_tagset = selmon->tagset[selmon->seltags ^ 1];
 			target = ~0 & TAGMASK;
 		} else {
 			selmon->isoverview ^= 1;
@@ -1530,6 +1566,7 @@ int32_t toggleoverview(const Arg *arg) {
 	} else if (!selmon->isoverview && !selmon->sel) {
 		target = (1 << (selmon->pertag->prevtag - 1));
 		view(&(Arg){.ui = target}, false);
+		fix_mon_tagset_from_overview(selmon);
 		refresh_monitors_workspaces_status(selmon);
 		return 0;
 	}
@@ -1552,7 +1589,7 @@ int32_t toggleoverview(const Arg *arg) {
 	}
 
 	view(&(Arg){.ui = target}, false);
-
+	fix_mon_tagset_from_overview(selmon);
 	refresh_monitors_workspaces_status(selmon);
 	return 0;
 }

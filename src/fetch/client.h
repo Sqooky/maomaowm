@@ -12,7 +12,9 @@ bool check_hit_no_border(Client *c) {
 		}
 	}
 
-	if (no_border_when_single && c && c->mon && c->mon->visible_clients == 1) {
+	if (no_border_when_single && c && c->mon &&
+		((ISSCROLLTILED(c) && c->mon->visible_scroll_tiling_clients == 1) ||
+		 c->mon->visible_clients == 1)) {
 		hit_no_border = true;
 	}
 	return hit_no_border;
@@ -572,23 +574,29 @@ bool client_is_in_same_stack(Client *sc, Client *tc, Client *fc) {
 
 	if (id == TILE || id == VERTICAL_TILE || id == DECK ||
 		id == VERTICAL_DECK || id == RIGHT_TILE) {
-		if (fc && !fc->ismaster)
+		if (tc->ismaster ^ sc->ismaster)
 			return false;
-		else if (!sc->ismaster)
+		if (fc && !(fc->ismaster ^ sc->ismaster))
+			return false;
+		else
 			return true;
 	}
 
 	if (id == TGMIX) {
-		if (fc && !fc->ismaster)
+		if (tc->ismaster ^ sc->ismaster)
+			return false;
+		if (fc && !(fc->ismaster ^ sc->ismaster))
 			return false;
 		if (!sc->ismaster && sc->mon->visible_tiling_clients <= 3)
 			return true;
 	}
 
 	if (id == CENTER_TILE) {
-		if (fc && !fc->ismaster)
+		if (tc->ismaster ^ sc->ismaster)
 			return false;
-		if (!sc->ismaster && sc->geom.x == tc->geom.x)
+		if (fc && !(fc->ismaster ^ sc->ismaster))
+			return false;
+		if (sc->geom.x == tc->geom.x)
 			return true;
 		else
 			return false;

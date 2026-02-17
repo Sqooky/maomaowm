@@ -1,3 +1,45 @@
+void restore_size_per(Monitor *m, Client *c) {
+	Client *fc = NULL;
+	double total_master_inner_per = 0;
+	double total_stack_inner_per = 0;
+
+	if (!m || !c)
+		return;
+
+	const Layout *current_layout = m->pertag->ltidxs[m->pertag->curtag];
+
+	if (current_layout->id == SCROLLER ||
+		current_layout->id == VERTICAL_SCROLLER || current_layout->id == GRID ||
+		current_layout->id == VERTICAL_GRID || current_layout->id == DECK ||
+		current_layout->id == VERTICAL_DECK || current_layout->id == MONOCLE) {
+		return;
+	}
+
+	if (current_layout->id == CENTER_TILE || c->ismaster) {
+		wl_list_for_each(fc, &clients, link) {
+			if (VISIBLEON(fc, m) && ISTILED(fc) && !c->ismaster) {
+				set_size_per(m, fc);
+			}
+		}
+		return;
+	}
+
+	wl_list_for_each(fc, &clients, link) {
+		if (VISIBLEON(fc, m) && ISTILED(fc) && fc != c) {
+			if (fc->ismaster) {
+				total_master_inner_per += fc->master_inner_per;
+			} else {
+				total_stack_inner_per += fc->stack_inner_per;
+			}
+		}
+	}
+
+	if (!c->ismaster && total_stack_inner_per) {
+		c->stack_inner_per = total_stack_inner_per * c->stack_inner_per /
+							 (1 - c->stack_inner_per);
+	}
+}
+
 void set_size_per(Monitor *m, Client *c) {
 	Client *fc = NULL;
 	bool found = false;
@@ -5,8 +47,13 @@ void set_size_per(Monitor *m, Client *c) {
 	if (!m || !c)
 		return;
 
+	const Layout *current_layout = m->pertag->ltidxs[m->pertag->curtag];
+
 	wl_list_for_each(fc, &clients, link) {
 		if (VISIBLEON(fc, m) && ISTILED(fc) && fc != c) {
+			if (current_layout->id == CENTER_TILE &&
+				!(fc->isleftstack ^ c->isleftstack))
+				continue;
 			c->master_mfact_per = fc->master_mfact_per;
 			c->master_inner_per = fc->master_inner_per;
 			c->stack_inner_per = fc->stack_inner_per;
@@ -210,7 +257,7 @@ void resize_tile_master_horizontal(Client *grabc, bool isdrag, int32_t offsetx,
 		}
 
 		if (last_apply_drap_time == 0 ||
-			time - last_apply_drap_time > drag_refresh_interval) {
+			time - last_apply_drap_time > drag_tile_refresh_interval) {
 			arrange(grabc->mon, false, false);
 			last_apply_drap_time = time;
 		}
@@ -367,7 +414,7 @@ void resize_tile_master_vertical(Client *grabc, bool isdrag, int32_t offsetx,
 		}
 
 		if (last_apply_drap_time == 0 ||
-			time - last_apply_drap_time > drag_refresh_interval) {
+			time - last_apply_drap_time > drag_tile_refresh_interval) {
 			arrange(grabc->mon, false, false);
 			last_apply_drap_time = time;
 		}
@@ -548,7 +595,7 @@ void resize_tile_scroller(Client *grabc, bool isdrag, int32_t offsetx,
 		}
 
 		if (last_apply_drap_time == 0 ||
-			time - last_apply_drap_time > drag_refresh_interval) {
+			time - last_apply_drap_time > drag_tile_refresh_interval) {
 			arrange(grabc->mon, false, false);
 			last_apply_drap_time = time;
 		}

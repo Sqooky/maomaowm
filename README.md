@@ -23,19 +23,9 @@ This project's development is based on [dwl](https://codeberg.org/dwl/dwl/).
      - Ipc support(get/send message from/to compositor by external program)
      - Hycov-like overview
      - Window effects from scenefx (blur, shadow, corner radius, opacity)
+     - Zero flickering - every frame is perfect.
 
-Master-Stack Layout
-
-https://github.com/user-attachments/assets/a9d4776e-b50b-48fb-94ce-651d8a749b8a
-
-Scroller Layout
-
-https://github.com/user-attachments/assets/c9bf9415-fad1-4400-bcdc-3ad2d76de85a
-
-Layer animation
-
-https://github.com/user-attachments/assets/014c893f-115c-4ae9-8342-f9ae3e9a0df0
-
+https://github.com/user-attachments/assets/bb83004a-0563-4b48-ad89-6461a9b78b1f
 
 # Our discord
 [mangowc](https://discord.gg/CPjbDxesh5)
@@ -75,7 +65,7 @@ https://github.com/user-attachments/assets/014c893f-115c-4ae9-8342-f9ae3e9a0df0
 - libxcb
 
 ## Arch Linux
-The package is in the Arch User Repository and is availble for manual download [here](https://aur.archlinux.org/packages/mangowc-git) or through a AUR helper like yay:
+The package is in the Arch User Repository and is available for manual download [here](https://aur.archlinux.org/packages/mangowc-git) or through a AUR helper like yay:
 ```bash
 yay -S mangowc-git
 
@@ -108,6 +98,34 @@ Then, install the package:
 ```bash
 dnf install mangowc
 ```
+
+## GuixSD
+The package definition is described in the source repository.
+First, add `mangowc` channel to `channels.scm` file:
+
+```scheme
+;; In $HOME/.config/guix/channels.scm
+(cons (channel
+        (name 'mangowc)
+        (url "https://github.com/DreamMaoMao/mangowc.git"))
+      ... ;; Your other channels
+      %default-channels)
+```
+
+Then, run `guix pull` and after update you can either run
+`guix install mangowc` or add it to your configuration via:
+
+```scheme
+(use-modules (mangowc)) ;; Add mangowc module
+
+;; Add mangowc to packages list
+(packages (cons 
+            mangowc
+            ... ;; Other packages you specified
+            %base-packages))
+```
+
+And then rebuild your system.
 
 ## Other
 

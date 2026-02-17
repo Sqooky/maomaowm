@@ -254,10 +254,13 @@ static inline int32_t client_is_stopped(Client *c) {
 	wl_client_get_credentials(c->surface.xdg->client->client, &pid, NULL, NULL);
 	if (waitid(P_PID, pid, &in, WNOHANG | WCONTINUED | WSTOPPED | WNOWAIT) <
 		0) {
-		/* This process is not our child process, while is very unluckely that
-		 * it is stopped, in order to do not skip frames assume that it is. */
+		/* This process is not our child process. We cannot determine its
+		 * stopped state; assume it is not stopped to avoid blocking frame skip.
+		 */
 		if (errno == ECHILD)
-			return 1;
+			return 0; // if not our child, assume not stopped
+		/* Other errors, also assume not stopped. */
+		return 0;
 	} else if (in.si_pid) {
 		if (in.si_code == CLD_STOPPED || in.si_code == CLD_TRAPPED)
 			return 1;
@@ -319,9 +322,25 @@ static inline uint32_t client_set_size(Client *c, uint32_t width,
 									   uint32_t height) {
 #ifdef XWAYLAND
 	if (client_is_x11(c)) {
+
+		struct wlr_surface_state *state =
+			&c->surface.xwayland->surface->current;
+
+		if ((int32_t)c->geom.width - 2 * (int32_t)c->bw ==
+				(int32_t)state->width &&
+			(int32_t)c->geom.height - 2 * (int32_t)c->bw ==
+				(int32_t)state->height &&
+			(int32_t)c->surface.xwayland->x ==
+				(int32_t)c->geom.x + (int32_t)c->bw &&
+			(int32_t)c->surface.xwayland->y ==
+				(int32_t)c->geom.y + (int32_t)c->bw) {
+			c->configure_serial = 0;
+			return 0;
+		}
+
 		wlr_xwayland_surface_configure(c->surface.xwayland, c->geom.x + c->bw,
 									   c->geom.y + c->bw, width, height);
-		return 0;
+		return 1;
 	}
 #endif
 	if ((int32_t)width == c->surface.xdg->toplevel->current.width &&
