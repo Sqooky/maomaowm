@@ -350,7 +350,7 @@ struct Client {
 	struct wlr_foreign_toplevel_handle_v1 *foreign_toplevel;
 	int32_t isfloating, isurgent, isfullscreen, isfakefullscreen,
 		need_float_size_reduce, isminimized, isoverlay, isnosizehint,
-		ignore_maximize, ignore_minimize;
+		ignore_maximize, ignore_minimize, indleinhibit_when_focus;
 	int32_t ismaximizescreen;
 	int32_t overview_backup_bw;
 	int32_t fullscreen_backup_x, fullscreen_backup_y, fullscreen_backup_w,
@@ -804,6 +804,10 @@ static void monitor_stop_skip_frame_timer(Monitor *m);
 static int monitor_skip_frame_timeout_callback(void *data);
 static Monitor *get_monitor_nearest_to(int32_t lx, int32_t ly);
 static bool match_monitor_spec(char *spec, Monitor *m);
+static void last_cursor_surface_destroy(struct wl_listener *listener,
+										void *data);
+static int32_t keep_idle_inhibit(void *data);
+static void check_keep_idle_inhibit(Client *c);
 
 #include "data/static_keymap.h"
 #include "dispatch/bind_declare.h"
@@ -900,7 +904,8 @@ struct dvec2 *baked_points_focus;
 struct dvec2 *baked_points_opafadein;
 struct dvec2 *baked_points_opafadeout;
 
-static struct wl_event_source *hide_source;
+static struct wl_event_source *hide_cursor_source;
+static struct wl_event_source *keep_idle_inhibit_source;
 static bool cursor_hidden = false;
 static bool tag_combo = false;
 static const char *cli_config_path = NULL;
@@ -968,6 +973,8 @@ static struct wl_listener new_session_lock = {.notify = locksession};
 static struct wl_listener drm_lease_request = {.notify = requestdrmlease};
 static struct wl_listener keyboard_shortcuts_inhibit_new_inhibitor = {
 	.notify = handle_keyboard_shortcuts_inhibit_new_inhibitor};
+static struct wl_listener last_cursor_surface_destroy_listener = {
+	.notify = last_cursor_surface_destroy};
 
 #ifdef XWAYLAND
 static void fix_xwayland_unmanaged_coordinate(Client *c);
@@ -1335,6 +1342,7 @@ static void apply_rule_properties(Client *c, const ConfigWinRule *r) {
 	APPLY_INT_PROP(c, r, ignore_maximize);
 	APPLY_INT_PROP(c, r, ignore_minimize);
 	APPLY_INT_PROP(c, r, isnosizehint);
+	APPLY_INT_PROP(c, r, indleinhibit_when_focus);
 	APPLY_INT_PROP(c, r, isunglobal);
 	APPLY_INT_PROP(c, r, noblur);
 	APPLY_INT_PROP(c, r, allow_shortcuts_inhibit);
@@ -2159,6 +2167,11 @@ void checkidleinhibitor(struct wlr_surface *exclude) {
 	wlr_idle_notifier_v1_set_inhibited(idle_notifier, inhibited);
 }
 
+void last_cursor_surface_destroy(struct wl_listener *listener, void *data) {
+	last_cursor.surface = NULL;
+	wl_list_remove(&listener->link);
+}
+
 void setcursorshape(struct wl_listener *listener, void *data) {
 	struct wlr_cursor_shape_manager_v1_request_set_shape_event *event = data;
 	if (cursor_mode != CurNormal && cursor_mode != CurPressed)
@@ -2167,6 +2180,11 @@ void setcursorshape(struct wl_listener *listener, void *data) {
 	 * actually has pointer focus first. If so, we can tell the cursor to
 	 * use the provided cursor shape. */
 	if (event->seat_client == seat->pointer_state.focused_client) {
+		/* Remove surface destroy listener if active */
+		if (last_cursor.surface &&
+			last_cursor_surface_destroy_listener.link.prev != NULL)
+			wl_list_remove(&last_cursor_surface_destroy_listener.link);
+
 		last_cursor.shape = event->shape;
 		last_cursor.surface = NULL;
 		if (!cursor_hidden)
@@ -2485,19 +2503,26 @@ void commitlayersurfacenotify(struct wl_listener *listener, void *data) {
 		return;
 	l->mapped = layer_surface->surface->mapped;
 
-	if (scene_layer != l->scene->node.parent) {
-		wlr_scene_node_reparent(&l->scene->node, scene_layer);
-		wl_list_remove(&l->link);
-		wl_list_insert(&l->mon->layers[layer_surface->current.layer], &l->link);
-		wlr_scene_node_reparent(
-			&l->popups->node,
-			(layer_surface->current.layer < ZWLR_LAYER_SHELL_V1_LAYER_TOP
-				 ? layers[LyrTop]
-				 : scene_layer));
+	if (layer_surface->current.committed & WLR_LAYER_SURFACE_V1_STATE_LAYER) {
+		if (scene_layer != l->scene->node.parent) {
+			wlr_scene_node_reparent(&l->scene->node, scene_layer);
+			wl_list_remove(&l->link);
+			wl_list_insert(&l->mon->layers[layer_surface->current.layer],
+						   &l->link);
+			wlr_scene_node_reparent(
+				&l->popups->node,
+				(layer_surface->current.layer < ZWLR_LAYER_SHELL_V1_LAYER_TOP
+					 ? layers[LyrTop]
+					 : scene_layer));
+		}
 	}
 
 	arrangelayers(l->mon);
-	reset_exclusive_layers_focus(l->mon);
+
+	if (layer_surface->current.committed &
+		WLR_LAYER_SURFACE_V1_STATE_KEYBOARD_INTERACTIVITY) {
+		reset_exclusive_layers_focus(l->mon);
+	}
 }
 
 void commitnotify(struct wl_listener *listener, void *data) {
@@ -3470,6 +3495,8 @@ void focusclient(Client *c, int32_t lift) {
 		selmon->sel = c;
 		c->isfocusing = true;
 
+		check_keep_idle_inhibit(c);
+
 		if (last_focus_client && !last_focus_client->iskilling &&
 			last_focus_client != c) {
 			last_focus_client->isfocusing = false;
@@ -4023,6 +4050,7 @@ void init_client_properties(Client *c) {
 	c->force_tiled_state = 1;
 	c->force_tearing = 0;
 	c->allow_shortcuts_inhibit = SHORTCUTS_INHIBIT_ENABLE;
+	c->indleinhibit_when_focus = 0;
 	c->scroller_proportion_single = 0.0f;
 	c->float_geom.width = 0;
 	c->float_geom.height = 0;
@@ -4942,10 +4970,21 @@ void setcursor(struct wl_listener *listener, void *data) {
 	 * hardware cursor on the output that it's currently on and continue to
 	 * do so as the cursor moves between outputs. */
 	if (event->seat_client == seat->pointer_state.focused_client) {
+		/* Clear previous surface destroy listener if any */
+		if (last_cursor.surface &&
+			last_cursor_surface_destroy_listener.link.prev != NULL)
+			wl_list_remove(&last_cursor_surface_destroy_listener.link);
+
 		last_cursor.shape = 0;
 		last_cursor.surface = event->surface;
 		last_cursor.hotspot_x = event->hotspot_x;
 		last_cursor.hotspot_y = event->hotspot_y;
+
+		/* Track surface destruction to avoid dangling pointer */
+		if (event->surface)
+			wl_signal_add(&event->surface->events.destroy,
+						  &last_cursor_surface_destroy_listener);
+
 		if (!cursor_hidden)
 			wlr_cursor_set_surface(cursor, event->surface, event->hotspot_x,
 								   event->hotspot_y);
@@ -5557,6 +5596,9 @@ void setup(void) {
 	idle_inhibit_mgr = wlr_idle_inhibit_v1_create(dpy);
 	wl_signal_add(&idle_inhibit_mgr->events.new_inhibitor, &new_idle_inhibitor);
 
+	keep_idle_inhibit_source = wl_event_loop_add_timer(
+		wl_display_get_event_loop(dpy), keep_idle_inhibit, NULL);
+
 	layer_shell = wlr_layer_shell_v1_create(dpy, 4);
 	wl_signal_add(&layer_shell->events.new_surface, &new_layer_surface);
 
@@ -5629,8 +5671,8 @@ void setup(void) {
 	cursor_shape_mgr = wlr_cursor_shape_manager_v1_create(dpy, 1);
 	wl_signal_add(&cursor_shape_mgr->events.request_set_shape,
 				  &request_set_cursor_shape);
-	hide_source = wl_event_loop_add_timer(wl_display_get_event_loop(dpy),
-										  hidecursor, cursor);
+	hide_cursor_source = wl_event_loop_add_timer(wl_display_get_event_loop(dpy),
+												 hidecursor, cursor);
 	/*
 	 * Configures a seat, which is a single "seat" at which a user sits and
 	 * operates the computer. This conceptually includes up to one keyboard,
@@ -5658,6 +5700,8 @@ void setup(void) {
 	LISTEN_STATIC(&cursor->events.hold_end, hold_end);
 
 	seat = wlr_seat_create(dpy, "seat0");
+
+	wl_list_init(&last_cursor_surface_destroy_listener.link);
 	wl_signal_add(&seat->events.request_set_cursor, &request_cursor);
 	wl_signal_add(&seat->events.request_set_selection, &request_set_sel);
 	wl_signal_add(&seat->events.request_set_primary_selection,
@@ -5847,7 +5891,8 @@ void overview_restore(Client *c, const Arg *arg) {
 }
 
 void handlecursoractivity(void) {
-	wl_event_source_timer_update(hide_source, cursor_hide_timeout * 1000);
+	wl_event_source_timer_update(hide_cursor_source,
+								 cursor_hide_timeout * 1000);
 
 	if (!cursor_hidden)
 		return;
@@ -5857,7 +5902,7 @@ void handlecursoractivity(void) {
 	if (last_cursor.shape)
 		wlr_cursor_set_xcursor(cursor, cursor_mgr,
 							   wlr_cursor_shape_v1_name(last_cursor.shape));
-	else
+	else if (last_cursor.surface)
 		wlr_cursor_set_surface(cursor, last_cursor.surface,
 							   last_cursor.hotspot_x, last_cursor.hotspot_y);
 }
@@ -5865,6 +5910,36 @@ void handlecursoractivity(void) {
 int32_t hidecursor(void *data) {
 	wlr_cursor_unset_image(cursor);
 	cursor_hidden = true;
+	return 1;
+}
+
+void check_keep_idle_inhibit(Client *c) {
+	if (c && c->indleinhibit_when_focus && keep_idle_inhibit_source) {
+		wl_event_source_timer_update(keep_idle_inhibit_source, 1000);
+	}
+}
+
+int32_t keep_idle_inhibit(void *data) {
+
+	if (!idle_inhibit_mgr) {
+		wl_event_source_timer_update(keep_idle_inhibit_source, 0);
+		return 1;
+	}
+
+	if (session && !session->active) {
+		wl_event_source_timer_update(keep_idle_inhibit_source, 0);
+		return 1;
+	}
+
+	if (!selmon || !selmon->sel || !selmon->sel->indleinhibit_when_focus) {
+		wl_event_source_timer_update(keep_idle_inhibit_source, 0);
+		return 1;
+	}
+
+	if (seat && idle_notifier) {
+		wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
+		wl_event_source_timer_update(keep_idle_inhibit_source, 1000);
+	}
 	return 1;
 }
 
